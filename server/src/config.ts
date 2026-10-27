@@ -74,6 +74,9 @@ export const config = {
     enabled: optional('AI_VISION_ENABLED', 'false') === 'true',
     apiKey: optional('AI_VISION_API_KEY'),
     model: optional('AI_VISION_MODEL', 'gpt-4o-mini'),
+    // Overridable so a self-hosted or gateway deployment can be pointed at an
+    // OpenAI-compatible endpoint. Defaults to OpenAI itself.
+    baseUrl: optional('AI_VISION_BASE_URL', 'https://api.openai.com/v1'),
   },
 
   sms: {

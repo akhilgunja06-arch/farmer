@@ -162,6 +162,7 @@ payment is simulated and no money is claimed to have moved.
 | Purpose | Preliminary visual assessment of a crop photo |
 | Provider | Any vision-capable model API. The request shape in `server/src/services/quality.ts` is OpenAI-compatible. |
 | Required variables | `AI_VISION_ENABLED=true`, `AI_VISION_API_KEY`, `AI_VISION_MODEL` |
+| Optional variable | `AI_VISION_BASE_URL` — an OpenAI-compatible endpoint. Leave blank to use `https://api.openai.com/v1`. |
 | Public or secret | **Secret.** Server-side only. |
 | Where configured | `.env` in the repository root |
 | Billing | Yes — the provider bills per image analysed. |
@@ -306,7 +307,7 @@ shown as written, with a translated description only when one has been provided.
 | Database & auth | `DATABASE_URL`, `APP_DATABASE_URL`, `JWT_SECRET` | **Configured** | Application cannot start |
 | Maps | `VITE_GOOGLE_MAPS_API_KEY` | Pending | List search instead of a map |
 | Payments | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Pending | Cash on delivery only |
-| AI image assessment | `AI_VISION_ENABLED`, `AI_VISION_API_KEY`, `AI_VISION_MODEL` | Pending | Feature hidden |
+| AI image assessment | `AI_VISION_ENABLED`, `AI_VISION_API_KEY`, `AI_VISION_MODEL`, `AI_VISION_BASE_URL` | Pending | Feature hidden |
 | Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | Pending | Links logged to the console |
 | SMS / OTP | `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID` | Pending | OTP sign-in hidden |
 | Market prices | `AGMARKNET_API_URL`, `AGMARKNET_API_KEY` | Pending | Manual comparison only |

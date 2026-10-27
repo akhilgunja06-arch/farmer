@@ -495,12 +495,67 @@ assert_json "the AI disclaimer is present" "'does not replace professional' in d
 assert_json "registered and verified are distinguished" \
   "len(d['trust_levels']) >= 4"
 
+# The status endpoint the interface polls on load. It reports the capability,
+# never a result, and must answer for a signed-out visitor.
+CODE="$(req GET /api/quality/ai-assess "" "")"
+assert_json "the AI capability status is readable" "'enabled' in d"
+assert_json "the status carries the disclaimer" "len(d['disclaimer']) > 0"
+
 CODE="$(req POST /api/quality/ai-assess "$FARMER_JAR" '{
   "product_id":"'"$NEW_PRODUCT_ID"'","image_path":"x/y/z.jpg"}')"
 if [ "$CODE" = "503" ]; then
   pass "AI assessment reports that it is unconfigured"
 else
   fail "AI assessment reports that it is unconfigured" "got $CODE"
+fi
+
+# A key that does not belong to the listing must be refused before any provider
+# is contacted, so an unconfigured deployment still distinguishes the two cases.
+CODE="$(req POST /api/quality/ai-assess "$CUSTOMER_JAR" '{
+  "product_id":"'"$NEW_PRODUCT_ID"'","image_path":"x/y/z.jpg"}')"
+if [ "$CODE" = "503" ] || [ "$CODE" = "404" ] || [ "$CODE" = "403" ]; then
+  pass "an AI request without a usable image is refused"
+else
+  fail "an AI request without a usable image is refused" "got $CODE"
+fi
+
+# ---------------------------------------------------------------------------
+section "16b. Nearby farmers"
+# ---------------------------------------------------------------------------
+# The catalogue and the directory must agree on the coordinate contract.
+# /api/products uses near_lat/near_lng; /api/farmers/nearby-farmers is
+# documented as lat/lng. Both spellings are accepted so neither page breaks.
+CODE="$(req GET "/api/farmers/nearby-farmers?near_lat=17.4&near_lng=78.5&max_distance_km=200" "" "")"
+assert_json "nearby-farmers accepts the catalogue's parameter names" "'farmers' in d"
+assert_json "nearby-farmers echoes the reference point" "d['reference']['radius_km'] == 200"
+
+CODE="$(req GET "/api/farmers/nearby-farmers?lat=17.4&lng=78.5&radius_km=200" "" "")"
+assert_json "nearby-farmers accepts the documented parameter names" "'farmers' in d"
+
+CODE="$(req GET "/api/farmers/nearby-farmers" "" "")"
+assert_json "nearby-farmers still lists farmers without a location" "'farmers' in d"
+assert_json "and says why they are not sorted" "d['note'] is not None"
+
+# Results that were measured must carry a distance, and must be ordered by it.
+CODE="$(req GET "/api/farmers/nearby-farmers?lat=17.4&lng=78.5&radius_km=2000" "" "")"
+assert_json "measured results carry a distance" \
+  "all(f.get('distance_km') is not None for f in d['farmers'])"
+assert_json "measured results are ordered nearest first" \
+  "[f['distance_km'] for f in d['farmers']] == sorted(f['distance_km'] for f in d['farmers'])"
+
+CODE="$(req GET "/api/farmers/nearby-farmers?lat=999&lng=78.5" "" "")"
+if [ "$CODE" = "400" ]; then
+  pass "an out-of-range coordinate is rejected"
+else
+  fail "an out-of-range coordinate is rejected" "got $CODE"
+fi
+
+# The literal path must not be swallowed by the /:id handler, which would
+# reject it as a malformed identifier.
+if [ "$CODE" != "404" ]; then
+  pass "nearby-farmers is not captured by the single-farmer route"
+else
+  fail "nearby-farmers is not captured by the single-farmer route" "got 404"
 fi
 
 # ---------------------------------------------------------------------------

@@ -66,19 +66,24 @@ export interface StoredFile {
   sha256: string;
 }
 
+export interface ValidatedUpload {
+  mime: string;
+  ext: string;
+  byteSize: number;
+}
+
 /**
- * Validate and store an uploaded file.
+ * Validate an upload's size and true type without storing it.
  *
- * Returns a relative key. Nothing about the original filename is reused beyond
- * the extension we derived from the file's own bytes, so a filename containing
- * path separators or shell metacharacters cannot influence where the file lands.
+ * Split out from storeUpload so a caller that only needs the bytes — the AI
+ * assessment reads an image and forwards it to a model, and never persists it —
+ * still gets the same magic-byte check. The declared content type and the file
+ * name are both attacker-controlled and are deliberately ignored.
  */
-export async function storeUpload(
-  ownerId: string,
-  file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+export function validateUpload(
+  file: { buffer: Buffer; size: number },
   kind: UploadKind,
-  scope: string,
-): Promise<StoredFile> {
+): ValidatedUpload {
   const limits = KIND_LIMITS[kind];
 
   if (!file.buffer || file.buffer.length === 0) {
@@ -108,19 +113,36 @@ export async function storeUpload(
     );
   }
 
+  return { mime: detected.mime, ext: detected.ext, byteSize: file.buffer.length };
+}
+
+/**
+ * Validate and store an uploaded file.
+ *
+ * Returns a relative key. Nothing about the original filename is reused beyond
+ * the extension we derived from the file's own bytes, so a filename containing
+ * path separators or shell metacharacters cannot influence where the file lands.
+ */
+export async function storeUpload(
+  ownerId: string,
+  file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+  kind: UploadKind,
+  scope: string,
+): Promise<StoredFile> {
+  const { mime, ext, byteSize } = validateUpload(file, kind);
   const sha256 = createHash('sha256').update(file.buffer).digest('hex');
 
   // The path is built entirely from values we control: the owner's id (a UUID
   // from the session), a fixed scope word, a random name, and an extension
   // derived from the file's magic bytes.
   const safeScope = scope.replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'general';
-  const key = `${ownerId}/${safeScope}/${randomUUID()}.${detected.ext}`;
+  const key = `${ownerId}/${safeScope}/${randomUUID()}.${ext}`;
   const absolute = resolveStoragePath(key);
 
   await mkdir(join(config.storageDir, ownerId, safeScope), { recursive: true });
   await writeFile(absolute, file.buffer);
 
-  return { key, mimeType: detected.mime, byteSize: file.buffer.length, sha256 };
+  return { key, mimeType: mime, byteSize, sha256 };
 }
 
 /**
@@ -162,6 +184,21 @@ export async function deleteStoredFile(key: string): Promise<void> {
 
 export function extensionFor(mime: string): string {
   return SIGNATURES.find((s) => s.mime === mime)?.ext ?? 'bin';
+}
+
+/**
+ * A stored image as a `data:` URI.
+ *
+ * The vision provider fetches an `http(s)` image URL itself, so handing it one
+ * would mean either publishing a private farmer document on a guessable path or
+ * standing up a signed-URL scheme. Inlining the bytes avoids both: nothing
+ * leaves our process except in the model request the operator explicitly
+ * enabled, and the image never gets a public address.
+ */
+export async function toDataUri(key: string): Promise<string> {
+  const { buffer } = await readStoredFile(key);
+  const mime = mimeForKey(key);
+  return `data:${mime};base64,${buffer.toString('base64')}`;
 }
 
 /** Guess a content type from a stored key, for serving the file back. */

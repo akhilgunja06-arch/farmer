@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { HttpError } from '../db/pool.js';
 import { attachSession, requireRole, requireSession, withDb } from '../middleware/auth.js';
 import { generalLimiter, uploadLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { readUpload } from '../middleware/upload.js';
 import { getQuery, validateBody, validateQuery } from '../middleware/validate.js';
 import { paginate, q, q1 } from '../services/helpers.js';
 import * as products from '../services/products.js';
@@ -311,17 +312,3 @@ productsRouter.post(
     res.status(201).json({ id: created.id, message: 'Quality information saved.' });
   }),
 );
-
-/**
- * Read the multipart upload that multer already buffered.
- *
- * multer runs in index.ts with a memory limit, so by the time a handler is
- * reached the file is in memory and its size has been enforced.
- */
-function readUpload(req: Request): {
-  buffer: Buffer; originalname: string; mimetype: string; size: number;
-} {
-  const file = (req as Request & { file?: { buffer: Buffer; originalname: string; mimetype: string; size: number } }).file;
-  if (!file) throw new HttpError(400, 'No file was uploaded.', 'NO_FILE');
-  return file;
-}
