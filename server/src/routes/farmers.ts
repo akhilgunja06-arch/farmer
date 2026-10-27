@@ -85,6 +85,131 @@ farmersRouter.get(
 );
 
 /**
+ * Farmers near a point.
+ *
+ * Distance comes from Haversine over consented coordinates, so this works with
+ * no mapping provider configured. When a farmer has not published their
+ * location, they are excluded from distance results rather than shown at an
+ * approximate spot — `public_farmer_profiles` returns NULL coordinates unless
+ * the farmer opted in with location_public.
+ *
+ * Declared before `/:id` on purpose: Express matches in registration order, so
+ * a later `/nearby-farmers` would be captured by `/:id` and rejected as a
+ * malformed id.
+ *
+ * Both coordinate conventions are accepted, because the catalogue endpoint
+ * (`/api/products`) uses `near_lat`/`near_lng`/`max_distance_km` while this
+ * endpoint is documented as `lat`/`lng`/`radius_km`.
+ */
+farmersRouter.get(
+  '/nearby-farmers',
+  generalLimiter,
+  withDb(async (req, res) => {
+    const query = req.query as Record<string, string | undefined>;
+
+    const parseCoordinate = (
+      raw: string | undefined,
+      label: string,
+      limit: number,
+    ): number | undefined => {
+      if (raw === undefined || raw === '') return undefined;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < -limit || value > limit) {
+        throw new HttpError(400, `The ${label} is not a valid coordinate.`, 'INVALID_INPUT');
+      }
+      return value;
+    };
+
+    const lat = parseCoordinate(query.lat ?? query.near_lat, 'latitude', 90);
+    const lng = parseCoordinate(query.lng ?? query.near_lng, 'longitude', 180);
+
+    const radiusRaw = query.radius_km ?? query.max_distance_km;
+    let radius = 100;
+    if (radiusRaw !== undefined && radiusRaw !== '') {
+      const parsed = Number(radiusRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new HttpError(
+          400,
+          'The search radius must be a positive number of kilometres.',
+          'INVALID_INPUT',
+        );
+      }
+      radius = parsed;
+    }
+
+    const params: unknown[] = [];
+    const clauses: string[] = [];
+
+    if (query.crop) {
+      params.push(`%${query.crop}%`);
+      clauses.push(`EXISTS (
+        SELECT 1 FROM public_products p
+         WHERE p.farmer_id = fp.user_id AND p.name ILIKE $${params.length}
+      )`);
+    }
+    if (query.state) {
+      params.push(query.state);
+      clauses.push(`fp.state = $${params.length}`);
+    }
+    if (query.district) {
+      params.push(query.district);
+      clauses.push(`fp.district = $${params.length}`);
+    }
+    if (query.verified === 'true') {
+      clauses.push(`fp.verification_status = 'verified'`);
+    }
+
+    const hasPoint = lat !== undefined && lng !== undefined;
+    if (hasPoint) {
+      // Only farmers who published coordinates can be measured against a point.
+      clauses.push('fp.latitude IS NOT NULL AND fp.longitude IS NOT NULL');
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    // The full public projection, so the list view and the map both have the
+    // coordinates and farm details they render.
+    const rows = await q<
+      Record<string, unknown> & { latitude: number | null; longitude: number | null }
+    >(
+      `SELECT fp.*
+         FROM public_farmer_profiles fp
+        ${where}
+        ORDER BY fp.verification_status = 'verified' DESC,
+                 fp.rating_avg DESC NULLS LAST,
+                 fp.active_listings DESC
+        LIMIT 200`,
+      params,
+    );
+
+    if (!hasPoint) {
+      // No reference point: return the directory ordered by activity so the
+      // page still has something useful to show.
+      res.json({
+        farmers: rows,
+        reference: null,
+        note: 'No location provided, so results are not sorted by distance.',
+      });
+      return;
+    }
+
+    const withDistance = rows
+      .map((row) => ({
+        ...row,
+        distance_km: haversineKm(lat, lng, Number(row.latitude), Number(row.longitude)),
+      }))
+      .filter((row) => row.distance_km <= radius)
+      .sort((a, b) => a.distance_km - b.distance_km);
+
+    res.json({
+      farmers: withDistance,
+      reference: { lat, lng, radius_km: radius },
+      note: null,
+    });
+  }),
+);
+
+/**
  * One farmer's public profile, their listings, and their reviews.
  *
  * The farmer id is the profile id, which is also the id customers use when
@@ -467,58 +592,6 @@ dashboardRouter.get(
       pending_reviews: pendingReviews,
       unread_messages: unread?.n ?? 0,
     });
-  }),
-);
-
-/**
- * Farmers near a point.
- *
- * Distance comes from Haversine over consented coordinates, so this works with
- * no mapping provider configured. When a farmer has not published their
- * location, they are excluded rather than shown at an approximate spot.
- */
-dashboardRouter.get(
-  '/nearby-farmers',
-  generalLimiter,
-  withDb(async (req, res) => {
-    const query = req.query as Record<string, string | undefined>;
-    const lat = query.lat ? Number(query.lat) : undefined;
-    const lng = query.lng ? Number(query.lng) : undefined;
-    const radius = query.radius_km ? Number(query.radius_km) : 100;
-
-    if (lat === undefined || lng === undefined) {
-      // No reference point: return the directory ordered by activity so the
-      // page still has something useful to show.
-      const farmers = await q(
-        `SELECT user_id, full_name, profile_photo, farm_name, state, district, village,
-                verification_status, rating_avg, rating_count, active_listings,
-                offers_delivery, offers_pickup
-           FROM public_farmer_profiles
-          ORDER BY verification_status = 'verified' DESC, active_listings DESC
-          LIMIT 50`,
-      );
-      res.json({ farmers, reference: null, note: 'No location provided, so results are not sorted by distance.' });
-      return;
-    }
-
-    const rows = await q<Record<string, unknown> & { latitude: number; longitude: number }>(
-      `SELECT fp.user_id, fp.full_name, fp.profile_photo, fp.farm_name, fp.state,
-              fp.district, fp.village, fp.verification_status, fp.rating_avg,
-              fp.rating_count, fp.active_listings, fp.offers_delivery, fp.offers_pickup,
-              fp.latitude, fp.longitude
-         FROM public_farmer_profiles fp
-        WHERE fp.latitude IS NOT NULL AND fp.longitude IS NOT NULL`,
-    );
-
-    const withDistance = rows
-      .map((row) => ({
-        ...row,
-        distance_km: haversineKm(lat, lng, Number(row.latitude), Number(row.longitude)),
-      }))
-      .filter((row) => row.distance_km <= radius)
-      .sort((a, b) => a.distance_km - b.distance_km);
-
-    res.json({ farmers: withDistance, reference: { lat, lng, radius_km: radius }, note: null });
   }),
 );
 

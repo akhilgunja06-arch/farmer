@@ -2,7 +2,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
-import multer from 'multer';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { config, capabilities, describeMissingIntegrations, repoRoot } from './config.js';
@@ -10,6 +9,7 @@ import { closePool, healthCheck } from './db/pool.js';
 import { attachSession } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { generalLimiter } from './middleware/rateLimit.js';
+import { anySingleFile } from './middleware/upload.js';
 import { adminRouter } from './routes/admin.js';
 import { authRouter } from './routes/auth.js';
 import { addressesRouter, cartRouter, savedRouter } from './routes/cart.js';
@@ -64,17 +64,13 @@ export function createApp(): Express {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  // Multipart uploads are buffered in memory and capped at 50 MB. The service
-  // layer enforces the real per-kind limits; this is the outer backstop so a
-  // huge request cannot exhaust memory before reaching it.
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024, files: 1 },
-  });
-
   // Applied only to the routes that accept files, so a normal JSON request is
-  // never put through multipart parsing.
-  app.use(['/api/products', '/api/farmer/profile', '/api/reviews'], upload.single('file'));
+  // never put through multipart parsing. The field name is not pinned; see
+  // middleware/upload.ts for why.
+  app.use(
+    ['/api/products', '/api/farmer/profile', '/api/reviews', '/api/quality'],
+    anySingleFile,
+  );
 
   app.use(attachSession);
 

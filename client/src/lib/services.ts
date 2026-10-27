@@ -304,8 +304,15 @@ export const quality = {
   aiStatus: (signal?: AbortSignal) =>
     api.get<{ enabled: boolean; disclaimer: string }>('/api/quality/ai-assess', undefined, signal),
 
-  aiAssess: (file: File) => {
+  /**
+   * Ask for a preliminary visual assessment of a photograph on a listing.
+   *
+   * The server needs to know which listing the image belongs to, so the product
+   * id travels with the file.
+   */
+  aiAssess: (productId: string, file: File) => {
     const form = new FormData();
+    form.append('product_id', productId);
     form.append('image', file);
     return api.upload<{
       assessment: Record<string, unknown>;

@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { capabilities } from '../config.js';
 import { HttpError } from '../db/pool.js';
 import { requireRole, requireSession, withDb } from '../middleware/auth.js';
 import { generalLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { readUpload } from '../middleware/upload.js';
 import { validateBody } from '../middleware/validate.js';
 import { q, q1 } from '../services/helpers.js';
 import * as quality from '../services/quality.js';
@@ -86,10 +88,7 @@ reviewsRouter.post(
   requireRole('customer'),
   writeLimiter,
   withDb(async (req, res) => {
-    const file = (req as typeof req & {
-      file?: { buffer: Buffer; originalname: string; mimetype: string; size: number };
-    }).file;
-    if (!file) throw new HttpError(400, 'No file was uploaded.', 'NO_FILE');
+    const file = readUpload(req);
 
     const review = await q1<{ id: string }>(
       'SELECT id FROM reviews WHERE id = $1 AND customer_id = $2',
@@ -213,24 +212,70 @@ qualityRouter.get(
   }),
 );
 
-/** Ask for an AI-assisted visual assessment of one of the caller's images. */
+/**
+ * Whether AI-assisted assessment is available, and the wording that must be
+ * shown with any result.
+ *
+ * This is a GET so a page can ask on load without side effects. It reports the
+ * capability, never a result, and it is deliberately public: knowing that the
+ * feature is switched off is not sensitive, and the standards page shows it to
+ * signed-out visitors.
+ */
+qualityRouter.get(
+  '/ai-assess',
+  generalLimiter,
+  withDb(async (_req, res) => {
+    res.json({
+      enabled: capabilities.aiVision,
+      disclaimer: quality.AI_DISCLAIMER,
+    });
+  }),
+);
+
+/**
+ * Ask for an AI-assisted visual assessment.
+ *
+ * Accepts either a freshly attached photograph (multipart, any field name) or
+ * the storage key of an image already attached to the listing. The caller must
+ * be able to see the listing, and the image is validated by its magic bytes
+ * before anything is sent to a provider.
+ */
 qualityRouter.post(
   '/ai-assess',
   requireSession,
   writeLimiter,
   withDb(async (req, res) => {
-    const body = req.body as { product_id?: string; image_path?: string };
-    if (!body.product_id || !body.image_path) {
-      throw new HttpError(400, 'A product and an image are required.', 'MISSING_FIELDS');
+    const body = (req.body ?? {}) as { product_id?: string; image_path?: string };
+    const productId = body.product_id;
+
+    if (!productId) {
+      throw new HttpError(400, 'Choose a listing to assess.', 'MISSING_FIELDS');
     }
 
-    // The image must belong to a listing the caller can see, and the key must
-    // resolve inside the storage root.
-    storage.resolveStoragePath(body.image_path);
+    // A file may arrive on any field name. `req.files` is only populated for a
+    // multipart request, so a JSON call skips this entirely rather than being
+    // rejected for a missing upload it never intended to send.
+    const sentFile = Boolean(
+      (req as typeof req & { files?: unknown[] }).files?.length ||
+        (req as typeof req & { file?: unknown }).file,
+    );
+    const uploaded = sentFile ? readUpload(req) : undefined;
+
+    if (!uploaded && !body.image_path) {
+      throw new HttpError(
+        400,
+        'Attach a photograph, or name an image already on the listing.',
+        'MISSING_FIELDS',
+      );
+    }
 
     const result = await quality.analyseCropImage(
       req.session!.sub,
-      { product_id: body.product_id, image_path: body.image_path },
+      {
+        product_id: productId,
+        ...(body.image_path ? { image_path: body.image_path } : {}),
+        ...(uploaded ? { image: { buffer: uploaded.buffer, size: uploaded.size } } : {}),
+      },
       { ip: req.ip ?? null, userAgent: req.get('user-agent') ?? null },
     );
     res.json(result);

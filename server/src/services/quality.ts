@@ -1,6 +1,7 @@
 import { config, capabilities } from '../config.js';
 import { HttpError } from '../db/pool.js';
 import { audit, notify, q, q1 } from './helpers.js';
+import * as storage from './storage.js';
 
 /**
  * Crop quality reports.
@@ -176,7 +177,7 @@ export async function listQualityReportsForProduct(
  */
 export async function analyseCropImage(
   userId: string,
-  input: { product_id: string; image_path: string },
+  input: { product_id: string; image_path?: string; image?: { buffer: Buffer; size: number } },
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<Record<string, unknown>> {
   if (!capabilities.aiVision) {
@@ -194,7 +195,9 @@ export async function analyseCropImage(
   );
   if (!product) throw new HttpError(404, 'That listing could not be found.', 'PRODUCT_NOT_FOUND');
 
-  const findings = await callVisionModel(product.name, input.image_path);
+  const imageUrl = await resolveVisionImage(input);
+
+  const findings = await callVisionModel(product.name, imageUrl);
 
   const created = await q1<{ id: string }>(
     `INSERT INTO crop_quality_reports (
@@ -236,46 +239,105 @@ interface VisionFindings {
 }
 
 /**
+ * Decide which bytes the model should look at, and turn them into something it
+ * can fetch.
+ *
+ * Two inputs are accepted. A freshly uploaded image is validated by magic bytes
+ * and inlined directly. A stored `image_path` is first checked to belong to a
+ * listing the caller may see, then inlined as a data URI.
+ *
+ * Either way the model receives a `data:` URI, never a filesystem key and never
+ * a URL that would have to be made publicly reachable.
+ */
+async function resolveVisionImage(
+  input: { product_id: string; image_path?: string; image?: { buffer: Buffer; size: number } },
+): Promise<string> {
+  if (input.image) {
+    const { mime } = storage.validateUpload(input.image, 'image');
+    return `data:${mime};base64,${input.image.buffer.toString('base64')}`;
+  }
+
+  if (!input.image_path) {
+    throw new HttpError(400, 'Attach a photograph to assess.', 'MISSING_FIELDS');
+  }
+
+  // Rejects any key that escapes the storage root before we touch the disk.
+  storage.resolveStoragePath(input.image_path);
+
+  // The image must actually be attached to this listing. The product_images
+  // policy already limits a farmer to their own rows and exposes the rest only
+  // for active public listings, so a row coming back here is one the caller may
+  // see — and a key belonging to somebody else's private document returns
+  // nothing.
+  const owned = await q1<{ id: string }>(
+    'SELECT id FROM product_images WHERE storage_path = $1 AND product_id = $2',
+    [input.image_path, input.product_id],
+  );
+  if (!owned) {
+    throw new HttpError(404, 'That image could not be found.', 'IMAGE_NOT_FOUND');
+  }
+
+  return storage.toDataUri(input.image_path);
+}
+
+/**
  * Ask the configured vision model for a preliminary visual assessment.
  *
  * The prompt constrains the model to what a photograph can actually show, and
  * the response is filtered so a model that volunteers a claim about pesticide
  * residue cannot have that claim stored as if it were a finding.
  */
-async function callVisionModel(productName: string, imagePath: string): Promise<VisionFindings> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.aiVision.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.aiVision.model,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: [
-            'You assess produce photographs for a farmer marketplace.',
-            'Report only characteristics that are visible in the image: colour,',
-            'surface defects, bruising, mould, shrivelling, size uniformity.',
-            'You cannot and must not comment on pesticide residue, chemical',
-            'contamination, microbial safety, nutrition, or certification.',
-            'Return JSON: {"summary": string, "observations": [{"aspect": string,',
-            '"finding": string, "confidence": "low"|"medium"|"high"}],',
-            '"limitations": [string]}',
-          ].join(' '),
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: `Produce: ${productName}. Assess the visible condition.` },
-            { type: 'image_url', image_url: { url: imagePath } },
-          ],
-        },
-      ],
-    }),
-  });
+async function callVisionModel(productName: string, imageUrl: string): Promise<VisionFindings> {
+  const endpoint = `${config.aiVision.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+  // A DNS failure, a refused connection or a timeout throws here rather than
+  // returning a response. Left unhandled it would surface as a generic 500 and
+  // hide the fact that the provider is simply unreachable, so it is translated
+  // into the same 502 the caller sees for a bad response.
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.aiVision.apiKey}`,
+      },
+      signal: AbortSignal.timeout(45_000),
+      body: JSON.stringify({
+        model: config.aiVision.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You assess produce photographs for a farmer marketplace.',
+              'Report only characteristics that are visible in the image: colour,',
+              'surface defects, bruising, mould, shrivelling, size uniformity.',
+              'You cannot and must not comment on pesticide residue, chemical',
+              'contamination, microbial safety, nutrition, or certification.',
+              'Return JSON: {"summary": string, "observations": [{"aspect": string,',
+              '"finding": string, "confidence": "low"|"medium"|"high"}],',
+              '"limitations": [string]}',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Produce: ${productName}. Assess the visible condition.` },
+              { type: 'image_url', image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (caught) {
+    console.error('[ai-vision] provider unreachable', (caught as Error).message);
+    throw new HttpError(
+      502,
+      'The image assessment service could not be reached. Please try again later.',
+      'AI_PROVIDER_UNREACHABLE',
+    );
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
