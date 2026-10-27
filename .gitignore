@@ -1,0 +1,28 @@
+# Server
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+
+# Uploaded media (stored on disk in development; a real deployment uses object
+# storage — see INTEGRATION_SETUP.md)
+server/storage/*
+!server/storage/.gitkeep
+
+# Client
+client/dist/
+client/.env
+client/.env.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.agent_tmp/
+
+# TypeScript incremental build info (generated)
+*.tsbuildinfo
