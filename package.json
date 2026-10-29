@@ -1,0 +1,28 @@
+{
+  "name": "rythudirect",
+  "private": true,
+  "version": "1.0.0",
+  "description": "RythuDirect - Farmer-to-Customer Marketplace (India)",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:client": "npm --workspace client run dev",
+    "build": "npm --workspace client run build && npm --workspace server run build",
+    "start": "npm --workspace server run start",
+    "db:migrate": "npm --workspace server run db:migrate",
+    "db:seed": "npm --workspace server run db:seed",
+    "db:reset": "npm --workspace server run db:reset",
+    "test": "npm --workspace server run test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
