@@ -558,6 +558,101 @@ else
   fail "nearby-farmers is not captured by the single-farmer route" "got 404"
 fi
 
+  # ---------------------------------------------------------------------------
+  section "16c. Farmer advisor"
+  # ---------------------------------------------------------------------------
+  # The advisor is farmer-only. A customer has no farm to advise on, so the role
+  # boundary is asserted rather than assumed.
+
+  CODE="$(req GET /api/advisor/status "" "")"
+  [ "$CODE" = "401" ] && pass "advisor status needs a session" \
+    || fail "advisor status needs a session" "got $CODE"
+
+  CODE="$(req GET /api/advisor/sessions "$CUSTOMER_JAR" "")"
+  [ "$CODE" = "403" ] && pass "a customer cannot reach the advisor" \
+    || fail "a customer cannot reach the advisor" "got $CODE"
+
+  CODE="$(req GET /api/advisor/sessions "$FARMER_JAR" "")"
+  [ "$CODE" = "200" ] && pass "a farmer can list their advisor sessions" \
+    || fail "a farmer can list their advisor sessions" "got $CODE"
+
+  # Status reports what is actually configured, so the page can render an honest
+  # notice rather than fail when no provider key is present.
+  CODE="$(req GET /api/advisor/status "$FARMER_JAR" "")"
+  assert_json "advisor status reports its configuration honestly" \
+    "isinstance(d['configured'], bool) and 'disclaimer' in d"
+
+  CODE="$(req POST /api/advisor/sessions "$FARMER_JAR" \
+    '{"state":"Telangana","district":"Warangal","land_acres":5,"season":"kharif","language":"te"}')"
+  if [ "$CODE" = "201" ]; then
+    ADVISOR_SESSION_ID="$(body_get "d['id']")"
+    pass "a farmer can start an advisor conversation"
+    assert_json "the session records the farmer's language" "d['language'] == 'te'"
+
+    # Asking without a configured provider must decline cleanly, never invent an
+    # answer or claim a figure it does not have.
+    CODE="$(req POST "/api/advisor/sessions/$ADVISOR_SESSION_ID/ask" "$FARMER_JAR" \
+      '{"question":"Which crop is more profitable for my five acres this kharif?"}')"
+    if [ "$CODE" = "503" ]; then
+      assert_json "an unconfigured advisor fails with a clear code" \
+        "d['error']['code'] == 'ADVISOR_NOT_CONFIGURED'"
+      pass "an unconfigured advisor does not fabricate an answer"
+    elif [ "$CODE" = "200" ]; then
+      assert_json "a configured answer carries the advisory disclaimer" \
+        "'disclaimer' in d or 'answer' in d"
+      pass "a configured advisor returns an answer"
+    else
+      fail "the advisor answers or declines cleanly" "got $CODE"
+    fi
+
+    CODE="$(req POST "/api/advisor/sessions/$ADVISOR_SESSION_ID/ask" "$FARMER_JAR" '{"question":"hi"}')"
+    [ "$CODE" = "422" ] || [ "$CODE" = "400" ] && pass "a too-short question is rejected" \
+      || fail "a too-short question is rejected" "got $CODE"
+
+    # Another farmer must not read this conversation.
+    CODE="$(req GET "/api/advisor/sessions/$ADVISOR_SESSION_ID" "$OTHER_JAR" "")"
+    [ "$CODE" = "404" ] && pass "another farmer cannot read this advisor session" \
+      || fail "another farmer cannot read this advisor session" "got $CODE"
+  else
+    fail "a farmer can start an advisor conversation" "got $CODE: $(head -c 200 "$BODY_FILE")"
+  fi
+
+  # Reference data is the only source of cost and yield figures, and only an
+  # administrator may record it. An unwritten table must read as "not available",
+  # never as an estimate.
+  CODE="$(req POST /api/admin/agronomic-reference "$FARMER_JAR" \
+    '{"crop_name":"Cotton","state":"Telangana","season":"kharif","cost_per_acre":1,"source":"invented","observed_on":"2024-01-01"}')"
+  [ "$CODE" = "403" ] && pass "a farmer cannot record advisor reference data" \
+    || fail "a farmer cannot record advisor reference data" "got $CODE"
+
+  CODE="$(req POST /api/admin/agronomic-reference "$ADMIN_JAR" \
+    '{"crop_name":"E2E Crop","state":"Telangana","district":"Warangal","season":"kharif","cost_per_acre":40000,"yield_per_acre":8,"yield_unit":"quintal","duration_days":150,"source":"E2E reference check","observed_on":"2024-06-01"}')"
+  if [ "$CODE" = "201" ]; then
+    pass "an administrator can record a sourced figure"
+    # The row is removed again so a test run does not leave figures the advisor
+    # would quote to a real farmer as verified.
+    REFERENCE_ID="$(body_get "d['id']")"
+    CODE="$(req DELETE "/api/admin/agronomic-reference/$REFERENCE_ID" "$FARMER_JAR" "")"
+    [ "$CODE" = "403" ] && pass "a farmer cannot remove advisor reference data" \
+      || fail "a farmer cannot remove advisor reference data" "got $CODE"
+    CODE="$(req DELETE "/api/admin/agronomic-reference/$REFERENCE_ID" "$ADMIN_JAR" "")"
+    [ "$CODE" = "200" ] && pass "an administrator can withdraw a recorded figure" \
+      || fail "an administrator can withdraw a recorded figure" "got $CODE"
+  else
+    fail "an administrator can record a sourced figure" "got $CODE"
+  fi
+
+  # A figure with no source is refused: an uncited number would be presented to a
+  # farmer as verified fact.
+  CODE="$(req POST /api/admin/agronomic-reference "$ADMIN_JAR" \
+    '{"crop_name":"Unsourced","state":"Telangana","season":"kharif","cost_per_acre":1000,"observed_on":"2024-06-01"}')"
+  [ "$CODE" = "422" ] || [ "$CODE" = "400" ] && pass "an unsourced figure is refused" \
+    || fail "an unsourced figure is refused" "got $CODE"
+
+  CODE="$(req POST /api/admin/agronomic-reference "$ADMIN_JAR" \
+    '{"crop_name":"Empty Figure","state":"Telangana","season":"kharif","source":"E2E empty check","observed_on":"2024-06-01"}')"
+  [ "$CODE" = "422" ] && pass "a figure with no cost or yield is refused" \
+    || fail "a figure with no cost or yield is refused" "got $CODE"
 # ---------------------------------------------------------------------------
 section "17. Multilingual support"
 # ---------------------------------------------------------------------------

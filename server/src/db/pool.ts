@@ -155,6 +155,31 @@ export async function withTransaction<T>(
  * the same transaction. Never derive it from the JWT alone: a token issued
  * before a demotion would otherwise keep its authority until it expired.
  */
+/**
+ * Run a best-effort statement that must not take the request down with it.
+ *
+ * Postgres aborts an entire transaction on the first failed statement, so a
+ * cache write that hits a constraint would poison everything after it — including
+ * a farmer's saved question. Wrapping the write in a savepoint means a failure
+ * rolls back only the write.
+ *
+ * Use this only for work that is genuinely optional. Anything a caller depends on
+ * should fail loudly instead.
+ */
+export async function bestEffort<T>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
+  const client = currentClient();
+  const name = `sp_${Math.random().toString(36).slice(2, 10)}`;
+  await client.query(`SAVEPOINT ${name}`);
+  try {
+    const value = await fn();
+    await client.query(`RELEASE SAVEPOINT ${name}`);
+    return { ok: true, value };
+  } catch (caught) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => {});
+    return { ok: false, error: caught as Error };
+  }
+}
+
 export async function privilegedBlock<T>(fn: () => Promise<T>): Promise<T> {
   const store = txStorage.getStore();
   if (!store) throw new Error('privilegedBlock() requires a transaction');

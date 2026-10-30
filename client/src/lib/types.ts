@@ -525,3 +525,122 @@ export interface AuditLog {
   ip_address: string | null;
   created_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Farmer advisor
+// ---------------------------------------------------------------------------
+
+/**
+ * A cell in the comparison table.
+ *
+ * `available: false` is the "Data Not Available" case and is deliberately not
+ * the same as `value: 0`. The UI must never render a missing figure as a zero,
+ * so the type keeps them distinct.
+ */
+export interface AdvisorCell {
+  available: boolean;
+  value: number | null;
+  unit: string | null;
+  reason?: string;
+  source?: string;
+  observed_on?: string;
+  age_days?: number;
+  is_stale?: boolean;
+}
+
+export interface AdvisorCropComparison {
+  crop_name: string;
+  season: string | null;
+  duration_days: AdvisorCell;
+  cost_per_acre: AdvisorCell;
+  expected_yield: AdvisorCell;
+  net_profit_per_acre: AdvisorCell;
+  irrigation_needs: AdvisorCell;
+  suitable_soils: string[];
+  key_risk: string;
+  unverified: boolean;
+}
+
+export interface AdvisorWeatherDay {
+  date: string;
+  temp_max_c: number | null;
+  temp_min_c: number | null;
+  rain_mm: number | null;
+  rain_probability_pct: number | null;
+  wind_max_kmh: number | null;
+}
+
+export interface AdvisorWeather {
+  available: boolean;
+  reason?: string;
+  granularity: 'village' | 'district' | null;
+  place_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  current: {
+    temp_c: number | null;
+    humidity_pct: number | null;
+    rain_mm: number | null;
+    wind_kmh: number | null;
+    observed_at: string | null;
+  } | null;
+  forecast: AdvisorWeatherDay[];
+  rain_total_mm: number | null;
+  fetched_at: string | null;
+  source: string;
+}
+
+export interface AdvisorSession {
+  id: string;
+  farmer_id: string;
+  state: string | null;
+  district: string | null;
+  village: string | null;
+  land_acres: number | null;
+  season: string | null;
+  irrigation: string | null;
+  soil_type: string | null;
+  budget_inr: number | null;
+  language: string;
+  title: string | null;
+  status: string;
+  compared_crops: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdvisorMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  body: string;
+  context_json: Record<string, unknown> | null;
+  model: string | null;
+  error_code: string | null;
+  created_at: string;
+}
+
+export interface AdvisorStatus {
+  configured: boolean;
+  weather_available: boolean;
+  reference_data: {
+    configured: boolean;
+    row_count: number;
+    states: string[];
+    latest_observation: string | null;
+  };
+  disclaimer: string;
+}
+
+export interface AdvisorAnswer {
+  answer: string;
+  comparison: AdvisorCropComparison[];
+  weather: AdvisorWeather;
+  disclaimer: string;
+  model: string;
+  reference_data_configured: boolean;
+  /**
+   * What the server-side output guard did with this reply. `withheld` is the
+   * number of sentences dropped for quoting an unverified figure.
+   */
+  guard: { ok: boolean; withheld: number; claims_checked: number };
+}

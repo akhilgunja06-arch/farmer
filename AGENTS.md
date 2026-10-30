@@ -35,8 +35,14 @@ A direct `psql "$APP_DATABASE_URL"` query returns almost nothing because of RLS.
 - `Modal` (`client/src/components/ui/Modal.tsx`) runs a focus-trap effect. It must depend only on `open` and read `onClose` from a ref — callers pass a fresh arrow function each render, and re-running the effect on every keystroke steals focus and swallows input after the first character.
 - Modals that show a success state must reset that state on close, or reopening shows a stale success screen.
 - `seed.ts` guards inserts behind `count(*) == 0` checks, so re-seeding a populated database is a no-op.
+- `tsc --noEmit` passes on `??` mixed with `||` (no parentheses) but **vite/esbuild fails the build** on it. Run `vite build`, not just `tsc`, before declaring the client done.
+- `npx eslint` on this repo takes over 5 minutes and is not usable as a quick check. Use `tsc` for types, then `vite build`.
+- Zod `.optional()` fields are **absent** (`undefined`) when omitted, not `null`. A guard written as `input.x === null` silently misses them; use `input.x == null`.
+- The API error envelope nests the code: it is `d['error']['code']`, not `d['code']`.
+- The advisor's figures are enforced by `server/src/services/advisorGuard.ts`, not only by the system prompt. It is pure and fixture-testable: `cd server && npm run test:guard`.
 
 ## Testing notes
 
 - `scripts/e2e.sh` starts its own API on a random port with rate limiting disabled, drives real farmer/customer/admin journeys over HTTP with session cookies, and does **not** reset the DB. It leaves `E2E *` users and products behind — clean them up (delete their orders first; `order_items.farmer_id` is `RESTRICT`) so they don't show as active public listings.
+- The advisor's cost/yield figures come only from `agronomic_reference`, which nothing seeds. `scripts/e2e.sh` records a row and deletes it again; an advisor test that leaves a row behind makes the advisor quote test data to real farmers.
 - Integration status is surfaced at `GET /api/health` and in the admin settings page. Unconfigured integrations (email, maps, payments, AI vision, SMS, market data) are expected to degrade gracefully, not crash.

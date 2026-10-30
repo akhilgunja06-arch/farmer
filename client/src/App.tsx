@@ -44,6 +44,9 @@ const FarmerOrderDetail = lazy(() => import('@/pages/farmer/FarmerOrderDetail'))
 const FarmerMessages = lazy(() => import('@/pages/farmer/FarmerMessages'));
 const FarmerQualityReports = lazy(() => import('@/pages/farmer/FarmerQualityReports'));
 const FarmerMarketInsights = lazy(() => import('@/pages/farmer/FarmerMarketInsights'));
+const FarmerAdvisorPage = lazy(() =>
+  import('@/pages/farmer/FarmerAdvisor').then((m) => ({ default: m.FarmerAdvisorPage })),
+);
 const FarmerProfile = lazy(() => import('@/pages/farmer/FarmerProfile'));
 const FarmerEarnings = lazy(() => import('@/pages/farmer/FarmerEarnings'));
 const FarmerSettings = lazy(() => import('@/pages/farmer/FarmerSettings'));
@@ -70,6 +73,7 @@ const AdminOrders = lazy(() => import('@/pages/admin/AdminOrders'));
 const AdminQualityReviews = lazy(() => import('@/pages/admin/AdminQualityReviews'));
 const AdminReports = lazy(() => import('@/pages/admin/AdminReports'));
 const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings'));
+const AdminAgronomicReference = lazy(() => import('@/pages/admin/AdminAgronomicReference'));
 const AdminAuditLogs = lazy(() => import('@/pages/admin/AdminAuditLogs'));
 
 const NotFoundPage = lazy(() => import('@/pages/public/NotFoundPage'));
@@ -212,6 +216,23 @@ export function App() {
               </ProtectedRoute>
             }
           />
+
+            <Route
+              path="/farmer/advisor"
+              element={
+                <ProtectedRoute roles={['farmer']}>
+                  <FarmerAdvisorPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/farmer/advisor/:id"
+              element={
+                <ProtectedRoute roles={['farmer']}>
+                  <FarmerAdvisorPage />
+                </ProtectedRoute>
+              }
+            />
           <Route
             path="/farmer/profile"
             element={
@@ -390,6 +411,15 @@ export function App() {
               </ProtectedRoute>
             }
           />
+
+            <Route
+              path="/admin/agronomic-reference"
+              element={
+                <ProtectedRoute roles={['admin']}>
+                  <AdminAgronomicReference />
+                </ProtectedRoute>
+              }
+            />
           <Route
             path="/admin/audit-logs"
             element={

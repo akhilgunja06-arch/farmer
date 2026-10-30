@@ -5,8 +5,10 @@ import { validateBody } from '../middleware/validate.js';
 import { paginate } from '../services/helpers.js';
 import * as admin from '../services/admin.js';
 import * as market from '../services/market.js';
+import * as agronomy from '../services/agronomy.js';
 import * as reviews from '../services/reviews.js';
 import {
+  agronomicReferenceSchema,
   appSettingSchema,
   categorySchema,
   productFlagSchema,
@@ -292,6 +294,47 @@ adminRouter.get(
     res.json({ commodities: await market.listObservedCommodities() });
   }),
 );
+
+  // --- Agronomic reference data ----------------------------------------------
+  //
+  // The advisor's cost and yield figures come only from here. Without a write
+  // path the feature would read "Data Not Available" forever, so this endpoint is
+  // what makes the honest design usable.
+
+  adminRouter.get(
+    '/agronomic-reference',
+    generalLimiter,
+    withDb(async (_req, res) => {
+      res.json({ reference: await agronomy.listReference() });
+    }),
+  );
+
+  adminRouter.delete(
+    '/agronomic-reference/:id',
+    writeLimiter,
+    withDb(async (req, res) => {
+      await agronomy.deleteReference(req.session!.sub, Number(req.params.id), {
+        ip: req.ip ?? null,
+        userAgent: req.get('user-agent') ?? null,
+      });
+      res.json({ message: 'Reference row removed.' });
+    }),
+  );
+
+  adminRouter.post(
+    '/agronomic-reference',
+    writeLimiter,
+    validateBody(agronomicReferenceSchema),
+    withDb(async (req, res) => {
+      const created = await agronomy.recordReference(
+        req.session!.sub,
+        req.body as never,
+        { ip: req.ip ?? null, userAgent: req.get('user-agent') ?? null },
+      );
+      res.status(201).json(created);
+    }),
+  );
+
 
 // --- Settings and audit ----------------------------------------------------
 

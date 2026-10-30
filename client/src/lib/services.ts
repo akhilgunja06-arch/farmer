@@ -2,6 +2,10 @@ import { api } from './api';
 import type {
   Address,
   AdminOverview,
+  AdvisorAnswer,
+  AdvisorMessage,
+  AdvisorSession,
+  AdvisorStatus,
   AuditLog,
   Cart,
   Category,
@@ -449,6 +453,20 @@ export const admin = {
       signal,
     ),
 
+  /** Verified agronomic reference figures the advisor is allowed to quote. */
+  agronomicReference: (signal?: AbortSignal) =>
+    api.get<{ reference: Array<Record<string, unknown>> }>(
+      '/api/admin/agronomic-reference',
+      undefined,
+      signal,
+    ),
+
+  saveAgronomicReference: (payload: Record<string, unknown>) =>
+    api.post<{ id: number }>('/api/admin/agronomic-reference', payload),
+
+  deleteAgronomicReference: (id: number) =>
+    api.delete<{ message: string }>(`/api/admin/agronomic-reference/${id}`),
+
   saveSettings: (payload: Record<string, unknown>) =>
     api.put<{ ok: boolean }>('/api/admin/settings', payload),
 
@@ -478,4 +496,46 @@ export const farmerDashboard = {
     api.get<Record<string, unknown>>('/api/dashboard/farmer', undefined, signal),
   customer: (signal?: AbortSignal) =>
     api.get<Record<string, unknown>>('/api/dashboard/customer', undefined, signal),
+};
+
+/**
+ * The farmer advisor.
+ *
+ * `ask` is a POST because it costs a provider call, and because the answer
+ * depends on the question — it is not a cacheable read.
+ */
+export const advisor = {
+  status: (signal?: AbortSignal) =>
+    api.get<AdvisorStatus>('/api/advisor/status', undefined, signal),
+
+  listSessions: (signal?: AbortSignal) =>
+    api.get<{ sessions: AdvisorSession[] }>('/api/advisor/sessions', undefined, signal),
+
+  createSession: (payload: {
+    state?: string;
+    district?: string;
+    village?: string;
+    land_acres?: number;
+    season?: string;
+    irrigation?: string;
+    soil_type?: string;
+    budget_inr?: number;
+    language?: string;
+  }) => api.post<AdvisorSession>('/api/advisor/sessions', payload),
+
+  getSession: (id: string, signal?: AbortSignal) =>
+    api.get<{ session: AdvisorSession; messages: AdvisorMessage[] }>(
+      `/api/advisor/sessions/${id}`,
+      undefined,
+      signal,
+    ),
+
+  updateSession: (id: string, payload: Record<string, unknown>) =>
+    api.patch<AdvisorSession>(`/api/advisor/sessions/${id}`, payload),
+
+  deleteSession: (id: string) =>
+    api.delete<{ message: string }>(`/api/advisor/sessions/${id}`),
+
+  ask: (id: string, question: string) =>
+    api.post<AdvisorAnswer>(`/api/advisor/sessions/${id}/ask`, { question }),
 };

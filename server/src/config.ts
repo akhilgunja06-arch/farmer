@@ -89,6 +89,27 @@ export const config = {
     apiKey: optional('AGMARKNET_API_KEY'),
     apiUrl: optional('AGMARKNET_API_URL'),
   },
+
+  // Groq is OpenAI-compatible, so the advisor shares the shape of the vision
+  // call. The key stays server-side: it is never sent to the browser and never
+  // appears in a response body.
+  advisor: {
+    apiKey: optional('GROQ_API_KEY'),
+    model: optional('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+    baseUrl: optional('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
+    maxTokens: Number(optional('GROQ_MAX_TOKENS', '1200')),
+    temperature: Number(optional('GROQ_TEMPERATURE', '0.3')),
+    timeoutMs: Number(optional('GROQ_TIMEOUT_MS', '30000')),
+  },
+
+  // Open-Meteo publishes no key requirement, so weather works on any deployment
+  // with outbound network access. Both URLs are overridable for a proxy.
+  weather: {
+    forecastUrl: optional('WEATHER_FORECAST_URL', 'https://api.open-meteo.com/v1/forecast'),
+    geocodeUrl: optional('WEATHER_GEOCODE_URL', 'https://geocoding-api.open-meteo.com/v1/search'),
+    cacheTtlMinutes: Number(optional('WEATHER_CACHE_TTL_MINUTES', '60')),
+    timeoutMs: Number(optional('WEATHER_TIMEOUT_MS', '10000')),
+  },
 } as const;
 
 // Derived capability flags. The API exposes these so the UI can render an
@@ -101,6 +122,10 @@ export const capabilities = {
   aiVision: Boolean(config.aiVision.enabled && config.aiVision.apiKey),
   sms: Boolean(config.sms.provider && config.sms.apiKey),
   marketData: Boolean(config.agmarknet.apiUrl),
+  // Weather needs no credential, so it is reported as available unless an
+  // operator has deliberately blanked the URLs.
+  weather: Boolean(config.weather.forecastUrl),
+  advisor: Boolean(config.advisor.apiKey),
 } as const;
 
 export type Capabilities = typeof capabilities;
@@ -164,6 +189,13 @@ export function describeMissingIntegrations(): string[] {
     missing.push(
       'Market price data (AGMARKNET_API_URL) — market insights shows manually recorded ' +
         'observations, each labelled with its date and source.',
+    );
+  }
+
+  if (!capabilities.advisor) {
+    missing.push(
+      'Farmer advisor (GROQ_API_KEY, GROQ_MODEL) — the advisor page loads but asking ' +
+        'a question returns 503 ADVISOR_NOT_CONFIGURED rather than an answer.',
     );
   }
 

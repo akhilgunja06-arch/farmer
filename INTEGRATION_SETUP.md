@@ -153,7 +153,89 @@ payment is simulated and no money is claimed to have moved.
 
 ---
 
-## D. AI crop image assessment
+## D. Farmer advisor
+
+  **Status: not configured.** The advisor page renders, but asking a question
+  returns HTTP 503 with code `ADVISOR_NOT_CONFIGURED` rather than a fabricated
+  answer.
+
+  **Live completion is unverified.** No real provider call has been made from this
+  repository, so the configured path - a successful model reply, its token usage,
+  and the guard acting on real model output - has not been exercised end to end.
+  Only the unconfigured path is covered by `scripts/e2e.sh`. Treat the integration
+  as pending until a completion succeeds against a real key.
+
+  | | |
+  |---|---|
+  | Purpose | Conversational crop guidance: which crop suits a farm, expected costs and yields, and weather-aware advice |
+  | Provider | Any OpenAI-compatible chat-completions endpoint. The default is Groq (`https://api.groq.com/openai/v1`). |
+  | Required variable | `GROQ_API_KEY` |
+  | Optional variables | `GROQ_MODEL` (default `llama-3.3-70b-versatile`), `GROQ_BASE_URL`, `GROQ_MAX_TOKENS`, `GROQ_TEMPERATURE`, `GROQ_TIMEOUT_MS` |
+  | Public or secret | **Secret.** Server-side only. Never expose it through a `VITE_` variable. |
+  | Where configured | `.env` in the repository root |
+  | Billing | Yes — the provider bills per token. `ask` is rate-limited more tightly than a read for this reason. |
+
+  **Figures are enforced, not just requested.** The system prompt tells the model
+  not to invent numbers, but a prompt is a request rather than a guarantee. Every
+  reply is therefore passed through an output guard
+  (`server/src/services/advisorGuard.ts`) before it is shown or stored. Any
+  sentence stating a cost, yield, revenue, profit or duration that does not match a
+  verified cell for the crop in context is withheld and replaced with a notice in
+  the farmer's language. General advice - seasons, soils, irrigation, what a
+  forecast implies - carries no such figure and passes through untouched.
+
+  The guard's unit tests run without any credential:
+
+  ```bash
+  cd server && npm run test:guard
+  # expected: Result: 61 passed, 0 failed
+  ```
+
+  **Cost and yield figures do not come from the model.** The advisor may only
+  quote a figure that an administrator has recorded in `agronomic_reference`,
+  and it cites that row's source and observation date. A crop with no recorded
+  row is reported as "not available", never estimated. This is deliberate: a
+  plausible but wrong cost per acre decides whether a family borrows money.
+
+  **Recording figures.** An administrator enters them at
+  `/admin/agronomic-reference`, or over the API. `source` is mandatory and a row
+  with neither a cost nor a yield is refused. Only an administrator can write,
+  and only an administrator can withdraw a figure.
+
+  ```bash
+  # As an administrator session cookie.
+  curl -s -X POST http://localhost:12001/api/admin/agronomic-reference \
+    -b "$ADMIN_COOKIE" -H 'Content-Type: application/json' -d '{
+      "crop_name":"Cotton","state":"Telangana","district":"Warangal",
+      "season":"kharif","cost_per_acre":42000,"yield_per_acre":8.5,
+      "yield_unit":"quintal","duration_days":165,
+      "source":"Telangana PJTSAU Package of Practices 2024",
+      "observed_on":"2024-06-01"}'
+  # expected: 201 {"id":1}
+  ```
+
+  Use a published state package of practices, a CACP cost-of-cultivation
+  report, or a university extension bulletin. Do not enter an estimate.
+
+  **How to test**
+
+  ```bash
+  curl -s http://localhost:12001/api/health | grep -o '"advisor":[a-z]*'
+  # expected: "advisor":true
+  ```
+
+  **Without this credential:** the advisor page shows a notice that the advisor
+  is not configured, and `ask` returns 503. Weather, the comparison table
+  (where figures exist) and every other part of the application still work.
+
+  **Weather is separate and keyless.** Open-Meteo needs no credential, so the
+  weather panel works on any deployment. Responses are cached in
+  `weather_snapshots`, keyed by coordinates rounded to about 1 km so farmers in
+  one village share a single call.
+
+  ---
+
+## E. AI crop image assessment
 
 **Status: not configured.** The feature is hidden.
 
@@ -191,7 +273,7 @@ still upload photographs, measurements and inspection documents manually.
 
 ---
 
-## E. Email
+## F. Email
 
 **Status: not configured.** Messages are written to the server log instead.
 
@@ -222,7 +304,7 @@ to contact support.
 
 ---
 
-## F. SMS and phone OTP
+## G. SMS and phone OTP
 
 **Status: not configured.** Phone OTP sign-in is hidden.
 
@@ -247,7 +329,7 @@ option is not displayed.
 
 ---
 
-## G. Market price data
+## H. Market price data
 
 **Status: not configured.** Manual comparison is available.
 
@@ -282,7 +364,7 @@ observation is presented as current.
 
 ---
 
-## H. Translation
+## I. Translation
 
 **Status: not applicable — deliberately not an external integration.**
 
@@ -307,6 +389,7 @@ shown as written, with a translated description only when one has been provided.
 | Database & auth | `DATABASE_URL`, `APP_DATABASE_URL`, `JWT_SECRET` | **Configured** | Application cannot start |
 | Maps | `VITE_GOOGLE_MAPS_API_KEY` | Pending | List search instead of a map |
 | Payments | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Pending | Cash on delivery only |
+| Farmer advisor | `GROQ_API_KEY`, `GROQ_MODEL` | Pending | Advisor declines with 503; cost/yield figures need `agronomic_reference` rows |
 | AI image assessment | `AI_VISION_ENABLED`, `AI_VISION_API_KEY`, `AI_VISION_MODEL`, `AI_VISION_BASE_URL` | Pending | Feature hidden |
 | Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | Pending | Links logged to the console |
 | SMS / OTP | `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID` | Pending | OTP sign-in hidden |
