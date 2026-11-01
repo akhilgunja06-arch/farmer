@@ -1,26 +1,4 @@
-import {
-  Bell,
-  Bookmark,
-  ClipboardList,
-  FileCheck2,
-  LayoutDashboard,
-  MapPin,
-  MessageSquare,
-  Package,
-  PlusCircle,
-  Settings,
-  ShieldCheck,
-  ShoppingCart,
-  Sprout,
-  Store,
-  TrendingUp,
-  UserCog,
-  Users,
-  Wallet,
-  Flag,
-  ScrollText,
-  Home,
-} from 'lucide-react';
+import { Bell, Bookmark, ClipboardList, FileCheck2, Flag, Home, LayoutDashboard, MapPin, MessageSquare, Package, PlusCircle, ScrollText, Settings, ShieldCheck, ShoppingCart, Sparkles, Sprout, Store, TrendingUp, UserCog, Users, Wallet } from 'lucide-react';
 import type { SidebarLink } from './DashboardLayout';
 
 /**
@@ -37,6 +15,7 @@ export const farmerLinks: SidebarLink[] = [
   { to: '/farmer/orders', labelKey: 'nav.incomingOrders', icon: ClipboardList },
   { to: '/farmer/messages', labelKey: 'common.messages', icon: MessageSquare },
   { to: '/farmer/quality-reports', labelKey: 'nav.qualityReports', icon: FileCheck2 },
+  { to: '/farmer/advisor', labelKey: 'nav.advisor', icon: Sparkles },
   { to: '/farmer/market-insights', labelKey: 'nav.marketInsights', icon: TrendingUp },
   { to: '/farmer/profile', labelKey: 'nav.farmProfile', icon: Sprout },
   { to: '/farmer/earnings', labelKey: 'nav.earnings', icon: Wallet },
@@ -66,6 +45,7 @@ export const adminLinks: SidebarLink[] = [
   { to: '/admin/orders', labelKey: 'admin.orders', icon: ClipboardList },
   { to: '/admin/quality-reviews', labelKey: 'admin.qualityReviews', icon: ShieldCheck },
   { to: '/admin/reports', labelKey: 'admin.reports', icon: Flag },
+  { to: '/admin/agronomic-reference', labelKey: 'admin.referenceData', icon: Sprout },
   { to: '/admin/settings', labelKey: 'admin.settings', icon: Settings },
   { to: '/admin/audit-logs', labelKey: 'admin.auditLogs', icon: ScrollText },
 ];

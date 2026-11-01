@@ -11,6 +11,7 @@ import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { generalLimiter } from './middleware/rateLimit.js';
 import { anySingleFile } from './middleware/upload.js';
 import { adminRouter } from './routes/admin.js';
+import { advisorRouter } from './routes/advisor.js';
 import { authRouter } from './routes/auth.js';
 import { addressesRouter, cartRouter, savedRouter } from './routes/cart.js';
 import { countersRouter, filesRouter, notificationsRouter } from './routes/files.js';
@@ -100,6 +101,7 @@ export function createApp(): Express {
   app.use('/api/quality', qualityRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/market', marketRouter);
+  app.use('/api/advisor', advisorRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/counters', countersRouter);
   app.use('/api/files', filesRouter);

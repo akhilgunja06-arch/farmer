@@ -12,7 +12,9 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "tsx src/db/reset.ts",
-    "test": "tsx test/run.ts"
+    "test": "tsx test/advisorGuard.test.ts && tsx test/run.ts",
+    "test:guard": "tsx test/advisorGuard.test.ts",
+    "test:e2e": "tsx test/run.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

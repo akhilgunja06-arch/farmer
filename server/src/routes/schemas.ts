@@ -417,3 +417,49 @@ export const verificationRequestSchema = z.object({
   land_document_path: z.string().max(500).nullable().optional(),
   notes: z.string().trim().max(1000).nullable().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Farmer advisor
+//
+// The farmer's own words are the input here, so the question is length-bounded
+// rather than pattern-matched — a farmer may write in Telugu, mix scripts, or
+// type on a phone keyboard. Only the enumerations are strict.
+// ---------------------------------------------------------------------------
+
+const seasonEnum = z.enum(['kharif', 'rabi', 'zaid', 'perennial']);
+const irrigationEnum = z.enum(['rainfed', 'canal', 'borewell', 'drip', 'tank', 'other']);
+
+export const advisorSessionSchema = z.object({
+  state: z.string().trim().min(2).max(80).optional(),
+  district: z.string().trim().min(2).max(80).optional(),
+  village: z.string().trim().min(1).max(120).optional(),
+  land_acres: z.coerce.number().positive().max(100000).optional(),
+  season: seasonEnum.optional(),
+  irrigation: irrigationEnum.optional(),
+  soil_type: z.string().trim().min(2).max(120).optional(),
+  budget_inr: z.coerce.number().min(0).max(1_000_000_000).optional(),
+  language: languageSchema.optional(),
+});
+
+export const agronomicReferenceSchema = z.object({
+  crop_name: z.string().trim().min(2).max(120),
+  state: z.string().trim().min(2).max(80),
+  district: z.string().trim().min(2).max(80).nullable().optional(),
+  season: z.enum(['kharif', 'rabi', 'zaid', 'perennial', 'any']),
+  variety: z.string().trim().max(120).nullable().optional(),
+  cost_per_acre: z.coerce.number().min(0).max(100_000_000).nullable().optional(),
+  yield_per_acre: z.coerce.number().positive().max(1_000_000).nullable().optional(),
+  yield_unit: unitSchema.nullable().optional(),
+  duration_days: z.coerce.number().int().positive().max(3650).nullable().optional(),
+  irrigation_needs: z.enum(['low', 'medium', 'high']).nullable().optional(),
+  suitable_soils: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  // Mandatory: an unsourced figure would be presented to a farmer as verified.
+  source: z.string().trim().min(3).max(300),
+  source_ref: z.string().trim().max(300).nullable().optional(),
+  observed_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+});
+
+export const advisorAskSchema = z.object({
+  question: z.string().trim().min(3, 'Please type a question.').max(2000, 'Please keep the question shorter.'),
+});
